@@ -8,55 +8,59 @@ interface MoneyLadderProps {
 
 export function MoneyLadder({ currentLevel }: MoneyLadderProps) {
   return (
-    <div className="bg-card/60 backdrop-blur-sm border border-border rounded-lg p-6">
-      <h2 className="text-xl font-bold text-primary mb-6 font-mono tracking-wide">
-        PRIZE LADDER
-      </h2>
-      <div className="space-y-2">
-        {[...MONEY_LADDER].reverse().map((item, index) => {
+    <div className="h-full flex flex-col bg-card/60 backdrop-blur-sm border border-border rounded-lg overflow-hidden">
+      <div className="flex-shrink-0 px-3 pt-3 pb-2 border-b border-border/50">
+        <h2 className="text-xs font-bold text-primary font-mono tracking-widest uppercase">
+          Prize Ladder
+        </h2>
+      </div>
+      <div className="flex-1 overflow-hidden flex flex-col-reverse justify-start p-2 gap-1">
+        {MONEY_LADDER.map((item) => {
           const isCurrent = item.level === currentLevel;
           const isPassed = item.level < currentLevel;
-          
+
           return (
             <motion.div
               key={item.level}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.05 }}
+              animate={isCurrent ? { scale: [1, 1.03, 1] } : {}}
+              transition={{ duration: 0.6, repeat: isCurrent ? Infinity : 0, repeatDelay: 2 }}
               className={cn(
-                "relative px-4 py-3 rounded-md border-2 transition-all duration-300",
-                isCurrent && "border-accent bg-accent/20 shadow-lg shadow-accent/30",
-                isPassed && "border-primary/30 bg-primary/10",
-                !isCurrent && !isPassed && "border-border/50 bg-card/40",
-                item.isSafeHaven && "ring-2 ring-primary/40 ring-offset-2 ring-offset-background"
+                'relative flex items-center justify-between px-3 rounded border transition-all duration-300',
+                'min-h-[28px]',
+                isCurrent && 'border-accent bg-accent/20 shadow-sm shadow-accent/40',
+                isPassed && 'border-primary/25 bg-primary/8',
+                !isCurrent && !isPassed && 'border-border/30 bg-transparent',
+                item.isSafeHaven && 'ring-1 ring-primary/50 ring-offset-1 ring-offset-background'
               )}
               data-testid={`money-level-${item.level}`}
             >
-              <div className="flex items-center justify-between">
-                <span
-                  className={cn(
-                    "text-sm font-semibold font-mono",
-                    isCurrent && "text-accent",
-                    isPassed && "text-primary",
-                    !isCurrent && !isPassed && "text-muted-foreground"
-                  )}
-                >
-                  {item.level}
-                </span>
-                <span
-                  className={cn(
-                    "text-lg font-bold font-mono tracking-wide",
-                    isCurrent && "text-accent",
-                    isPassed && "text-primary",
-                    !isCurrent && !isPassed && "text-foreground/70"
-                  )}
-                >
-                  {formatCurrency(item.amount)}
-                </span>
-              </div>
+              {/* Safe-haven dot */}
               {item.isSafeHaven && (
-                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-primary" />
+                <span className="absolute -left-[5px] top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-primary shadow shadow-primary/60" />
               )}
+
+              <span
+                className={cn(
+                  'text-[10px] font-bold font-mono w-5 text-center flex-shrink-0',
+                  isCurrent && 'text-accent',
+                  isPassed && 'text-primary/70',
+                  !isCurrent && !isPassed && 'text-muted-foreground/50'
+                )}
+              >
+                {item.level}
+              </span>
+
+              <span
+                className={cn(
+                  'text-xs font-bold font-mono tracking-wide ml-1',
+                  isCurrent && 'text-accent text-sm',
+                  isPassed && 'text-primary/80',
+                  !isCurrent && !isPassed && 'text-foreground/60',
+                  item.amount === 1000000 && 'text-sm font-extrabold'
+                )}
+              >
+                {formatCurrency(item.amount)}
+              </span>
             </motion.div>
           );
         })}
