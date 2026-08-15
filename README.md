@@ -18,6 +18,7 @@ Changes made in this pass:
 - **Removed Replit-only tooling** (workspace `catalog:` package versions, the internal `@workspace/api-client-react` package, Replit dev-banner/cartographer/error-overlay plugins, and the `PORT`/`BASE_PATH` env vars vite previously required to even start) so `npm install && npm run build` works out of the box on any machine or CI runner.
 - **Added a GitHub Actions workflow** that builds and deploys to GitHub Pages automatically on every push to `main`.
 - Fixed a strict-mode TypeScript error in `PhoneFriendModal` (missing return on one code path).
+- **Expanded the question bank from 150 to 297 questions** (80 easy, 86 medium, 70 hard, 61 very-hard), spanning geography, history, science, math, literature, art, mythology, and general knowledge. Every new question was checked for correct answer accuracy, four distinct options, and no duplicates against the existing bank. Since each playthrough only draws 5 easy + 5 medium + 4 hard + 1 very-hard question at random, this roughly doubles how many unique games you can play before seeing a repeat.
 
 ## Run locally
 
@@ -79,7 +80,7 @@ Where this lives in the code:
 
 ## Game mechanics
 
-- 15 questions, increasing in difficulty (5 easy, 5 medium, 4 hard, 1 very hard), randomly selected and shuffled each playthrough from the question bank in `src/data/questions.ts`.
+- 15 questions, increasing in difficulty (5 easy, 5 medium, 4 hard, 1 very hard), randomly selected and shuffled each playthrough from a bank of 297 questions in `src/data/questions.ts`.
 - Three lifelines: 50:50, Phone a Friend, Ask the Audience — each usable once per game.
 - Two safe havens (checkpoints): reaching question 5 correctly locks in $1,000; reaching question 10 correctly locks in $32,000. Missing a question drops you to your last locked-in checkpoint (or $0 if you haven't cleared one yet).
 - Walk away at any time to bank your current guaranteed amount.
