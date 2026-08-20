@@ -2,7 +2,7 @@
 
 A 15-question trivia game in the style of "Who Wants to Be a Millionaire," built with React, TypeScript, Vite, and Tailwind CSS. Runs entirely client-side — no backend required.
 
-**[Live demo](#)** — replace with your GitHub Pages URL once deployed (see below).
+**[Live demo →](https://babatundeawo.github.io/Millionaire-Mindset/)** · also mirrored on [Replit →](https://millionaire-mindset--ba-awoyemi.replit.app/)
 
 ## What's in this build
 
