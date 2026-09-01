@@ -31,20 +31,26 @@ export function LifelineButton({ type, used, onClick, disabled }: LifelineButton
       whileHover={!disabled && !used ? { scale: 1.05 } : {}}
       whileTap={!disabled && !used ? { scale: 0.95 } : {}}
       className={cn(
-        "relative flex flex-col items-center gap-2 px-6 py-4 rounded-lg border-2 transition-all duration-300",
+        // Mobile: compact icon-only circle so three of these plus the rest
+        // of the top bar fit on one row without wrapping.
+        // sm+: original roomy labelled card.
+        "relative flex items-center justify-center gap-0 w-10 h-10 p-0 rounded-full",
+        "sm:flex-col sm:justify-start sm:gap-2 sm:w-auto sm:h-auto sm:px-6 sm:py-4 sm:rounded-lg",
+        "border-2 transition-all duration-300",
         used && "opacity-40 cursor-not-allowed border-muted bg-muted/20",
         !used && !disabled && "border-primary bg-primary/10 hover:bg-primary/20 hover:border-primary/80",
         !used && disabled && "opacity-60 cursor-not-allowed border-primary/40 bg-primary/5"
       )}
+      aria-label={labels[type]}
       data-testid={`lifeline-${type}`}
     >
       <Icon className={cn(
-        "w-8 h-8",
+        "w-5 h-5 sm:w-8 sm:h-8",
         used && "text-muted-foreground",
         !used && "text-primary"
       )} />
       <span className={cn(
-        "text-sm font-bold font-mono",
+        "hidden sm:inline text-sm font-bold font-mono",
         used && "text-muted-foreground line-through",
         !used && "text-primary"
       )}>

@@ -220,9 +220,11 @@ export default function Game() {
       </div>
 
       {/* ── TOP BAR ─────────────────────────────────────────────────────────── */}
-      <div className="relative z-10 flex-shrink-0 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-4 py-2 border-b border-border/40 bg-card/25 backdrop-blur-sm">
+      {/* Mobile: two compact groups, always one row (lifelines are icon-only below sm).
+          sm+: original three-group layout with the counter centered absolutely. */}
+      <div className="relative z-10 flex-shrink-0 flex items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-4 py-1.5 sm:py-2 border-b border-border/40 bg-card/25 backdrop-blur-sm">
         {/* Lifelines */}
-        <div className="flex items-center gap-2 sm:gap-3 order-1">
+        <div className="flex items-center gap-1.5 sm:gap-3 order-1">
           <LifelineButton
             type="50-50"
             used={usedLifelines.fiftyFifty}
@@ -243,8 +245,9 @@ export default function Game() {
           />
         </div>
 
-        {/* Center: question counter */}
-        <div className="order-3 sm:order-2 w-full sm:w-auto text-center sm:absolute sm:left-1/2 sm:-translate-x-1/2">
+        {/* Center: question counter — sm+ only in the top bar; on mobile it
+            moves down next to "FOR $X" so the top bar never has to wrap. */}
+        <div className="hidden sm:block sm:order-2 sm:absolute sm:left-1/2 sm:-translate-x-1/2">
           <p className="text-xs text-muted-foreground font-mono tracking-widest inline-flex items-center gap-1.5">
             QUESTION {currentLevel} / 15
             {usedAiQuestions && (
@@ -259,17 +262,17 @@ export default function Game() {
         </div>
 
         {/* Right: walk away + mute */}
-        <div className="flex items-center gap-2 order-2 sm:order-3">
+        <div className="flex items-center gap-1.5 sm:gap-2 order-2 sm:order-3">
           <button
             onClick={handleWalkAway}
             disabled={revealState !== 'idle'}
-            className="px-3 sm:px-4 py-1.5 border border-accent/60 text-accent text-xs font-bold rounded hover:bg-accent/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+            className="px-2.5 sm:px-4 py-1.5 border border-accent/60 text-accent text-[11px] sm:text-xs font-bold rounded hover:bg-accent/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
           >
             WALK AWAY
           </button>
           <button
             onClick={toggleMute}
-            className="p-1.5 rounded border border-border/40 text-muted-foreground hover:text-foreground hover:border-border transition-all"
+            className="p-1.5 rounded border border-border/40 text-muted-foreground hover:text-foreground hover:border-border transition-all flex-shrink-0"
             title={muted ? 'Unmute' : 'Mute'}
           >
             {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
@@ -293,10 +296,10 @@ export default function Game() {
 
       {/* ── MAIN AREA ────────────────────────────────────────────────────────── */}
       {/* Mobile/tablet: single column, ladder below answers. Desktop (lg+): two columns side by side. */}
-      <div className="relative z-10 flex-1 flex flex-col lg:grid lg:grid-cols-[1fr_240px] gap-3 p-3 lg:overflow-hidden">
+      <div className="relative z-10 flex-1 flex flex-col lg:grid lg:grid-cols-[1fr_240px] gap-2 sm:gap-3 p-2.5 sm:p-3 lg:overflow-hidden">
 
         {/* LEFT: Question + Answers */}
-        <div className="flex flex-col justify-center gap-3 lg:overflow-hidden min-w-0 order-1">
+        <div className="flex flex-col justify-center gap-2 sm:gap-3 lg:overflow-hidden min-w-0 order-1">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentQuestionIndex}
@@ -306,6 +309,16 @@ export default function Game() {
               transition={{ duration: 0.4 }}
               className="flex flex-col gap-3"
             >
+              {/* Question counter — mobile only (sm+ shows it in the top bar instead) */}
+              <p className="sm:hidden text-center text-[11px] text-muted-foreground font-mono tracking-widest inline-flex items-center justify-center gap-1.5">
+                QUESTION {currentLevel} / 15
+                {usedAiQuestions && (
+                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary/15 text-primary text-[9px] font-bold">
+                    <Sparkles className="w-2.5 h-2.5" /> AI
+                  </span>
+                )}
+              </p>
+
               {/* Playing for */}
               <div className="text-center">
                 <motion.p
@@ -319,14 +332,14 @@ export default function Game() {
               </div>
 
               {/* Question box */}
-              <div className="bg-card/60 backdrop-blur-sm border-2 border-primary/40 rounded-lg px-4 sm:px-6 py-4 shadow-lg shadow-primary/10">
+              <div className="bg-card/60 backdrop-blur-sm border-2 border-primary/40 rounded-lg px-4 sm:px-6 py-3 sm:py-4 shadow-lg shadow-primary/10">
                 <h2 className="text-base sm:text-xl font-bold text-foreground leading-snug text-center">
                   {currentQuestion.question}
                 </h2>
               </div>
 
               {/* Answer grid: 1 column on small phones, 2 columns from sm breakpoint up */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
                 {currentQuestion.options.map(option => (
                   <AnswerButton
                     key={option.letter}
@@ -352,8 +365,8 @@ export default function Game() {
           </AnimatePresence>
         </div>
 
-        {/* Money Ladder — horizontal scroll strip on mobile, sidebar on desktop */}
-        <div className="order-2 lg:order-2 h-40 sm:h-48 lg:h-auto lg:overflow-hidden flex-shrink-0">
+        {/* Money Ladder — compact scrollable strip on mobile, sidebar on desktop */}
+        <div className="order-2 lg:order-2 h-28 sm:h-48 lg:h-auto lg:overflow-hidden flex-shrink-0">
           <MoneyLadder currentLevel={currentLevel} />
         </div>
       </div>
