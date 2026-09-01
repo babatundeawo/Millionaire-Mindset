@@ -3630,7 +3630,7 @@ export function selectRandomQuestions(): Question[] {
 }
 
 export function formatCurrency(amount: number): string {
-  return `$${amount.toLocaleString()}`;
+  return `₦${amount.toLocaleString()}`;
 }
 
 export function getGuaranteedPrize(currentLevel: number): number {

@@ -63,7 +63,7 @@ export default function Home() {
           className="text-center space-y-6"
         >
           <p className="text-xl sm:text-2xl md:text-3xl font-bold text-accent font-mono">
-            WIN UP TO $1,000,000
+            WIN UP TO ₦1,000,000
           </p>
 
           <Link

@@ -7,7 +7,7 @@ import { MoneyLadder } from '@/components/MoneyLadder';
 import { LifelineButton } from '@/components/LifelineButton';
 import { PhoneFriendModal } from '@/components/PhoneFriendModal';
 import { AudienceModal } from '@/components/AudienceModal';
-import { selectRandomQuestions, getGuaranteedPrize, MONEY_LADDER } from '@/data/questions';
+import { selectRandomQuestions, getGuaranteedPrize, MONEY_LADDER, formatCurrency } from '@/data/questions';
 import type { Question } from '@/data/questions';
 import { generateQuestionsWithGroq, getAiQuestionsEnabled } from '@/lib/groq';
 import {
@@ -246,7 +246,7 @@ export default function Game() {
         </div>
 
         {/* Center: question counter — sm+ only in the top bar; on mobile it
-            moves down next to "FOR $X" so the top bar never has to wrap. */}
+            moves down next to "FOR ₦X" so the top bar never has to wrap. */}
         <div className="hidden sm:block sm:order-2 sm:absolute sm:left-1/2 sm:-translate-x-1/2">
           <p className="text-xs text-muted-foreground font-mono tracking-widest inline-flex items-center gap-1.5">
             QUESTION {currentLevel} / 15
@@ -327,7 +327,7 @@ export default function Game() {
                   animate={{ scale: 1, opacity: 1 }}
                   className="text-lg sm:text-xl font-extrabold text-accent font-mono tracking-wide"
                 >
-                  FOR ${currentPrize.toLocaleString()}
+                  FOR {formatCurrency(currentPrize)}
                 </motion.p>
               </div>
 

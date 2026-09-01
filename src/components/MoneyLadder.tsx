@@ -8,12 +8,28 @@ interface MoneyLadderProps {
 }
 
 export function MoneyLadder({ currentLevel }: MoneyLadderProps) {
-  const currentRef = useRef<HTMLDivElement>(null);
+  // Always-attached ref per rung, keyed by level. We tried conditionally
+  // handing a single ref to "whichever item is current" (ref={isCurrent ?
+  // currentRef : undefined}), but framer-motion's motion.div does not
+  // reliably reattach a ref that toggles between undefined and an object
+  // across renders — it stayed pointed at level 1 forever, which is why
+  // the ladder never scrolled past the first two rungs on mobile. An
+  // unconditional ref on every item avoids that entirely.
+  const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const setItemRef = (level: number) => (el: HTMLDivElement | null) => {
+    if (el) itemRefs.current.set(level, el);
+    else itemRefs.current.delete(level);
+  };
+
+  // Render highest level first so it's visually on top — using normal
+  // (non-reversed) flex-column order. `flex-col-reverse` looks identical
+  // but makes scrollIntoView() unreliable across browsers, so we avoid it.
+  const rungsHighToLow = [...MONEY_LADDER].reverse();
 
   // Keep the active rung in view, especially important on short mobile
   // viewports where the ladder scrolls instead of showing all 15 rows.
   useEffect(() => {
-    currentRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    itemRefs.current.get(currentLevel)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, [currentLevel]);
 
   return (
@@ -23,15 +39,15 @@ export function MoneyLadder({ currentLevel }: MoneyLadderProps) {
           Prize Ladder
         </h2>
       </div>
-      <div className="flex-1 overflow-y-auto flex flex-col-reverse justify-start p-2 gap-1">
-        {MONEY_LADDER.map((item) => {
+      <div className="flex-1 overflow-y-auto flex flex-col justify-start p-2 gap-1">
+        {rungsHighToLow.map((item) => {
           const isCurrent = item.level === currentLevel;
           const isPassed = item.level < currentLevel;
 
           return (
             <motion.div
               key={item.level}
-              ref={isCurrent ? currentRef : undefined}
+              ref={setItemRef(item.level)}
               animate={isCurrent ? { scale: [1, 1.03, 1] } : {}}
               transition={{ duration: 0.6, repeat: isCurrent ? Infinity : 0, repeatDelay: 2 }}
               className={cn(
