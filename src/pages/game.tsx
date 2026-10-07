@@ -53,7 +53,7 @@ export default function Game() {
   // mid-reveal (e.g. browser Back) can never trigger a stray redirect.
   const timers = useRef<number[]>([]);
   const later = useCallback((fn: () => void, ms: number) => {
-    timers.current.push(window.later(fn, ms));
+       timers.current.push(window.setTimeout(fn, ms));
   }, []);
   useEffect(() => () => timers.current.forEach(window.clearTimeout), []);
 
