@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://babatundeawo.github.io/Millionaire-Mindset/sitemap.xml

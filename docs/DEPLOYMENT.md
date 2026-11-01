@@ -1,39 +1,42 @@
-# Deployment guide
+# How the site is published
 
-Everything runs on GitHub. You never need a terminal.
+Every time a change is merged into `main`, GitHub Actions builds the site and publishes it to GitHub Pages at https://babatundeawo.github.io/Millionaire-Mindset/. You do nothing extra.
 
-## How it works
+## Steps run by Actions
 
-When a change reaches the **main** branch, GitHub builds the site and publishes it to GitHub Pages. This takes about two minutes. Changes made in any other branch are only tested, never published.
+1. Install the tools
+2. Type check (reports problems, does not stop the publish)
+3. Game tests, colour contrast check
+4. Build the site
+5. Check the built site (manifest, icons, offline file list, security hash)
+6. Lighthouse report (informational)
+7. Publish
 
-One-time setting: **Settings > Pages > Build and deployment > Source > GitHub Actions**.
+If steps 3, 4 or 5 fail, nothing is published and the live site stays as it was.
 
-## Review and publish the redesign (pull request)
+## Update the site
 
-1. Open your repository on github.com.
-2. Click the branch menu (it says **main**), type `rebrand/premium-redesign`, and click **Create branch**.
-3. Click **Add file > Upload files**. Drag in everything from the unzipped redesign folder (the *contents*, not the folder itself; it contains only the changed files). Leave the box set to **Commit directly to the rebrand/premium-redesign branch** and click **Commit changes**.
-4. Open `src/components/ui`, click the **⋯** menu at the top right and choose **Delete directory**, then commit to the same branch. (Optional: this removes unused files. The site works either way.)
-5. Click **Compare & pull request**, then **Create pull request**.
-6. Wait for the checks at the bottom of the page. A green tick on **Build and deploy** means the site builds. A red cross means it does not, so do not merge yet.
-7. Happy? Click **Merge pull request > Confirm merge**. The live site updates in about two minutes.
-8. Not happy? Click **Close pull request**. Nothing changes on the live site.
+**From GitHub Desktop:** change files, write a short summary, commit to a branch, Publish branch, Create Pull Request, merge on github.com.
 
-GitHub Pages cannot show a preview of a pull request, so the live site changes only after you merge.
+**On github.com:** open a file, press the pencil, edit, then commit to a new branch and open a pull request.
 
-## Check that a deployment worked
-
-Open the **Actions** tab. The top run is the latest. A green tick means it is live. A red cross means it failed: click the run, click the red step, and read the last lines. Copy them into a new issue if you need help.
+Watch progress in the **Actions** tab. A green tick means it is live (allow a minute).
 
 ## Roll back
 
-1. Open **Pull requests > Closed** and pick the merged pull request.
-2. Click **Revert**, then **Create pull request**, then merge it. The previous version returns.
+Open the last pull request on github.com and press **Revert**. Merge the new pull request. The site returns to the earlier version.
 
 ## Custom domain (optional)
 
-**Settings > Pages > Custom domain**: type your domain and save. At your domain provider, add a `CNAME` record pointing `www` to `babatundeawo.github.io`. Tick **Enforce HTTPS** once it appears.
+1. Repository **Settings → Pages → Custom domain**, enter the domain.
+2. At your domain provider, add the DNS records GitHub shows.
+3. Tick **Enforce HTTPS** when it becomes available.
+4. Edit `homepage` in `package.json` to the new address, because links and share previews use it.
 
-## Security features
+Phones that installed the old address will need to install again.
 
-Turn on **Settings > Code security > Secret scanning** and **Push protection**. Dependency and code-scanning updates are already set up and appear under **Pull requests** and the **Security** tab.
+## Notes
+
+- The repository must stay public on the GitHub Free plan for Pages to work.
+- No secrets are needed. Firebase is not used.
+- GitHub Pages cannot set security headers, so the content security policy is set inside the page.

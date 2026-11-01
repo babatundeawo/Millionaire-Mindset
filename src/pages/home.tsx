@@ -1,78 +1,116 @@
-import { motion } from 'framer-motion';
-import { Link } from 'wouter';
-import { Gem, Zap, Phone, ShieldCheck } from 'lucide-react';
-import { AiSettingsPanel } from '@/components/AiSettingsPanel';
-import { MONEY_LADDER, formatCurrency } from '@/data/questions';
-
-const [havenA, havenB] = MONEY_LADDER.filter(r => r.isSafeHaven);
-const TOP = MONEY_LADDER[MONEY_LADDER.length - 1];
+import { useEffect, useState } from 'react';
+import { Climb } from '../components/Climb.tsx';
+import { Icon } from '../components/Icon.tsx';
+import { InstallCard } from '../components/PwaUi.tsx';
+import { SettingsDialog } from '../components/SettingsDialog.tsx';
+import { ThemeToggle } from '../components/ThemeToggle.tsx';
+import { HAVENS, formatNaira, TOP_PRIZE } from '../game/ladder.ts';
+import { unlockAudio } from '../hooks/useSound.ts';
+import { navigate } from '../lib/router.ts';
+import { countVisit } from '../lib/pwa.ts';
+import { useSettings } from '../lib/settings.ts';
 
 const STEPS = [
-  { icon: Zap, title: '15 questions', text: 'Climb from easy to very hard. Every correct answer raises the stakes.' },
-  { icon: Phone, title: '3 lifelines', text: '50:50, Phone a Friend and Ask the Audience. Each can be used once per game.' },
+  { icon: 'zap', title: '15 questions', text: 'Climb from easy to very hard. Every correct answer raises the stakes.' },
+  { icon: 'phone', title: '3 lifelines', text: '50:50, Phone a friend and Ask the audience. Each can be used once per game.' },
   {
-    icon: ShieldCheck,
+    icon: 'shield',
     title: '2 safe havens',
-    text: `Answer question ${havenA.level} to lock in ${formatCurrency(havenA.amount)}, and question ${havenB.level} to lock in ${formatCurrency(havenB.amount)}.`,
+    text: `Answer question ${HAVENS[0].level} to lock in ${formatNaira(HAVENS[0].amount)}, and question ${HAVENS[1].level} to lock in ${formatNaira(HAVENS[1].amount)}.`,
   },
-];
-
-const rise = (delay: number) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay, duration: 0.6, ease: [0.22, 1, 0.36, 1] as const } });
+] as const;
 
 export default function Home() {
+  const [settings, setSettings] = useState(false);
+  const [visits, setVisits] = useState(0);
+  const { stats, aiEnabled } = useSettings();
+  useEffect(() => setVisits(countVisit()), []);
+  useEffect(() => {
+    document.title = 'Millionaire Mindset: a 15-question trivia climb to ₦1,000,000';
+  }, []);
+
   return (
-    <div className="min-h-[100dvh] w-full relative overflow-hidden grain-overlay">
-      <div className="absolute inset-0 bg-background" aria-hidden="true">
-        <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[900px] h-[700px] max-w-full bg-primary/15 rounded-full blur-[130px] spotlight-pulse" />
-        <div className="absolute bottom-0 right-[10%] w-[360px] h-[360px] bg-accent/10 rounded-full blur-[110px] drift-slow" />
-      </div>
-
-      <div className="relative z-10 mx-auto flex min-h-[100dvh] max-w-3xl flex-col items-center px-4 pt-16 pb-8 text-center">
-        <motion.div {...rise(0)} className="mb-8 flex items-center gap-2 rounded-full border border-primary/30 bg-primary/5 px-4 py-1.5 font-mono text-xs tracking-[0.2em] text-primary">
-          <Gem className="h-3.5 w-3.5" aria-hidden="true" /> MILLIONAIRE MINDSET
-        </motion.div>
-
-        <motion.h1 {...rise(0.1)} className="mb-6">
-          <span className="block text-lg sm:text-2xl font-semibold uppercase tracking-[0.18em] text-foreground/80">Who wants to be a</span>
-          <span className="block font-[family-name:var(--font-display)] text-6xl sm:text-8xl md:text-9xl font-black text-gold-gradient">Millionaire?</span>
-        </motion.h1>
-
-        <motion.p {...rise(0.2)} className="mb-8 font-mono text-base sm:text-xl tracking-widest text-muted-foreground">
-          WIN UP TO <span className="text-gold-gradient font-bold">{formatCurrency(TOP.amount)}</span>
-        </motion.p>
-
-        <motion.div {...rise(0.3)}>
-          <Link
-            href="/game"
-            data-testid="play-button"
-            className="group relative inline-flex min-h-[56px] items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-primary to-primary/80 px-12 text-lg sm:text-xl font-bold tracking-wide text-primary-foreground shadow-xl shadow-primary/25 transition duration-300 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-primary/40 active:translate-y-0"
-          >
-            <span className="shine-sweep opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <span className="relative">PLAY NOW</span>
-          </Link>
-        </motion.div>
-
-        <motion.ul {...rise(0.45)} className="mt-14 grid w-full gap-3 sm:grid-cols-3" aria-label="How to play">
-          {STEPS.map(({ icon: Icon, title, text }) => (
-            <li key={title} className="glass-panel rounded-2xl p-5 text-left transition duration-300 hover:-translate-y-1 hover:border-primary/40">
-              <Icon className="mb-3 h-5 w-5 text-primary" aria-hidden="true" />
-              <h2 className="mb-1 text-base font-bold tracking-normal">{title}</h2>
-              <p className="text-sm leading-relaxed text-muted-foreground">{text}</p>
-            </li>
-          ))}
-        </motion.ul>
-
-        <motion.div {...rise(0.55)} className="w-full">
-          <AiSettingsPanel />
-        </motion.div>
-
-        <footer className="mt-auto pt-12 text-xs text-muted-foreground">
-          Play money only, no real prizes.{' '}
-          <a href="https://github.com/babatundeawo/Millionaire-Mindset" target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-4 hover:underline">
-            Source on GitHub
+    <div className="home">
+      <div className="container">
+        <header className="topbar">
+          <a className="brand" href="#/" aria-label="Millionaire Mindset, home">
+            <img src="./favicon-32.png" width="36" height="36" alt="" />
+            <span>Millionaire Mindset</span>
           </a>
+          <div className="topbar__actions">
+            <ThemeToggle />
+            <button type="button" className="btn btn--quiet" onClick={() => setSettings(true)} aria-label="Settings">
+              <Icon name="sliders" />
+            </button>
+          </div>
+        </header>
+
+        <section className="hero" aria-labelledby="hero-title">
+          <span className="chip rise" style={{ '--d': 0 } as React.CSSProperties}>
+            <Icon name="gem" size={16} /> Free trivia · play money only
+          </span>
+          <h1 id="hero-title" className="hero__title rise" style={{ '--d': 1 } as React.CSSProperties}>
+            Millionaire
+            <span>Mindset</span>
+          </h1>
+          <p className="hero__lede rise" style={{ '--d': 2 } as React.CSSProperties}>
+            Fifteen questions stand between you and <strong>{formatNaira(TOP_PRIZE)}</strong>. Use your lifelines wisely and lock in your safe havens.
+          </p>
+          <div className="hero__cta rise" style={{ '--d': 3 } as React.CSSProperties}>
+            <a
+              className="btn btn--gold btn--xl"
+              href="#/game"
+              onClick={(e) => {
+                e.preventDefault();
+                unlockAudio();
+                navigate('/game');
+              }}
+            >
+              Play now
+            </a>
+            <p className="hero__note">{aiEnabled ? 'AI questions are on.' : 'No account. No download. Works offline once loaded.'}</p>
+          </div>
+          <div className="rise" style={{ '--d': 4, display: 'contents' } as React.CSSProperties}>
+            <Climb />
+          </div>
+          {stats.played > 0 && (
+            <p className="record" aria-label="Your record">
+              <span>
+                Games <b>{stats.played}</b>
+              </span>
+              <span>
+                Wins <b>{stats.wins}</b>
+              </span>
+              <span>
+                Best prize <b>{formatNaira(stats.best)}</b>
+              </span>
+            </p>
+          )}
+        </section>
+
+        <section className="how" aria-label="How to play">
+          <h2>How to play</h2>
+          {STEPS.map((s) => (
+            <article key={s.title} className="card how__item">
+              <Icon name={s.icon} size={26} />
+              <h3>{s.title}</h3>
+              <p>{s.text}</p>
+            </article>
+          ))}
+        </section>
+
+        <InstallCard visits={visits} />
+
+        <footer className="footer">
+          <p>Play money only. There are no real prizes. Your settings and record stay on this device. There are no accounts and no tracking.</p>
+          <p>
+            <a href="https://github.com/babatundeawo/Millionaire-Mindset" target="_blank" rel="noopener noreferrer">
+              Source on GitHub
+            </a>
+          </p>
         </footer>
       </div>
+      <SettingsDialog open={settings} onClose={() => setSettings(false)} />
     </div>
   );
 }

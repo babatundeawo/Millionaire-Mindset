@@ -1,19 +1,22 @@
-// WWTBAM-style sound engine using Web Audio API synthesis
-// No external audio files required — everything is synthesized
+// Sound engine: every sound is synthesised with the Web Audio API, so there are
+// no audio files to download. Effects and the tense "thinking" music have
+// separate switches in Settings.
+import { getSettings } from '../lib/settings.ts';
+
+/** Call from a tap or click so mobile browsers allow audio later. */
+export function unlockAudio(): void {
+  try {
+    getCtx();
+  } catch {
+    /* no audio support */
+  }
+}
 
 let audioCtx: AudioContext | null = null;
-let _isMuted = false;
 let thinkingTimerId: ReturnType<typeof setInterval> | null = null;
 let thinkingMasterGain: GainNode | null = null;
 let thinkingNoteIndex = 0;
 
-export function setMuted(muted: boolean) {
-  _isMuted = muted;
-  if (muted) stopThinkingMusic();
-}
-export function getMuted() {
-  return _isMuted;
-}
 
 function getCtx(): AudioContext {
   if (!audioCtx || audioCtx.state === 'closed') {
@@ -52,7 +55,7 @@ function playNote(
 }
 
 // ─── Thinking music ──────────────────────────────────────────────────────────
-// 8-step rhythmic pattern at 250ms/step, approximating WWTBAM's tense bed music
+// 8-step rhythmic pattern at 250ms/step, a tense bed of music
 const THINKING_PATTERN: [number, number, number, OscillatorType][] = [
   [82.4,  0.14, 0.28, 'sine'],       // E2 bass pulse
   [329.6, 0.07, 0.10, 'triangle'],   // E4 tick
@@ -65,7 +68,7 @@ const THINKING_PATTERN: [number, number, number, OscillatorType][] = [
 ];
 
 export function startThinkingMusic() {
-  if (_isMuted) return;
+  if (!getSettings().music) return;
   stopThinkingMusic();
 
   const ctx = getCtx();
@@ -101,7 +104,7 @@ export function stopThinkingMusic() {
 
 // ─── Answer selected (suspense lock-in) ──────────────────────────────────────
 export function playAnswerSelected() {
-  if (_isMuted) return;
+  if (!getSettings().sfx) return;
   const ctx = getCtx();
   const now = ctx.currentTime;
   // Two rising stabs then a held tension note
@@ -112,7 +115,7 @@ export function playAnswerSelected() {
 
 // ─── Correct answer fanfare ───────────────────────────────────────────────────
 export function playCorrect() {
-  if (_isMuted) return;
+  if (!getSettings().sfx) return;
   const ctx = getCtx();
   const now = ctx.currentTime;
   // Ascending C-E-G-C arpeggio with held chord
@@ -127,10 +130,10 @@ export function playCorrect() {
 
 // ─── Wrong answer ─────────────────────────────────────────────────────────────
 export function playWrong() {
-  if (_isMuted) return;
+  if (!getSettings().sfx) return;
   const ctx = getCtx();
   const now = ctx.currentTime;
-  // Descending dissonant buzz — the iconic WWTBAM wrong sound
+  // Descending dissonant buzz
   playNote(ctx, 311.1, 0.25, 0.30, 'sawtooth', now);
   playNote(ctx, 233.1, 0.28, 0.28, 'sawtooth', now + 0.22);
   playNote(ctx, 174.6, 0.35, 0.25, 'sawtooth', now + 0.44);
@@ -140,7 +143,7 @@ export function playWrong() {
 
 // ─── Level up / milestone ─────────────────────────────────────────────────────
 export function playLevelUp() {
-  if (_isMuted) return;
+  if (!getSettings().sfx) return;
   const ctx = getCtx();
   const now = ctx.currentTime;
   // Quick bright ascending arpeggio
@@ -151,7 +154,7 @@ export function playLevelUp() {
 
 // ─── Safe haven milestone ─────────────────────────────────────────────────────
 export function playSafeHaven() {
-  if (_isMuted) return;
+  if (!getSettings().sfx) return;
   const ctx = getCtx();
   const now = ctx.currentTime;
   // More dramatic ascending phrase
@@ -163,7 +166,7 @@ export function playSafeHaven() {
 
 // ─── Walk away ────────────────────────────────────────────────────────────────
 export function playWalkAway() {
-  if (_isMuted) return;
+  if (!getSettings().sfx) return;
   const ctx = getCtx();
   const now = ctx.currentTime;
   // Gentle descending resolution
@@ -174,7 +177,7 @@ export function playWalkAway() {
 
 // ─── Millionaire win fanfare ──────────────────────────────────────────────────
 export function playWin() {
-  if (_isMuted) return;
+  if (!getSettings().sfx) return;
   const ctx = getCtx();
   const now = ctx.currentTime;
 
@@ -194,7 +197,7 @@ export function playWin() {
 
 // ─── Phone friend ring ────────────────────────────────────────────────────────
 export function playPhoneRing() {
-  if (_isMuted) return;
+  if (!getSettings().sfx) return;
   const ctx = getCtx();
   const now = ctx.currentTime;
   // Two-tone phone ring
@@ -209,7 +212,7 @@ export function playPhoneRing() {
 
 // ─── Audience applause (synthesized white-noise burst) ───────────────────────
 export function playAudienceReveal() {
-  if (_isMuted) return;
+  if (!getSettings().sfx) return;
   const ctx = getCtx();
   const bufferSize = ctx.sampleRate * 0.6;
   const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);

@@ -1,29 +1,46 @@
-import { MotionConfig } from 'framer-motion';
-import { Route, Switch, Router as WouterRouter } from 'wouter';
-import { useHashLocation } from 'wouter/use-hash-location';
-import NotFound from '@/pages/not-found';
-import Home from '@/pages/home';
-import Game from '@/pages/game';
-import Result from '@/pages/result';
+import { lazy, Suspense } from 'react';
+import { NetworkBadge, UpdateToast } from './components/PwaUi.tsx';
+import Home from './pages/home.tsx';
+import NotFound from './pages/not-found.tsx';
+import { useRoute } from './lib/router.ts';
+import { useTheme } from './lib/theme.ts';
 
-// Hash routing (#/game, #/result): GitHub Pages has no server-side rewrites,
-// so history-based routes would 404 on refresh.
-export default function App() {
+// The game screen and its question bank load only when a player starts.
+const Game = lazy(() => import('./pages/game.tsx'));
+const Result = lazy(() => import('./pages/result.tsx'));
+
+function Loading() {
   return (
-    <MotionConfig reducedMotion="user">
-      <button type="button" className="skip-link" onClick={() => document.getElementById('main')?.focus()}>
+    <div className="loading" role="status">
+      <div className="spinner" aria-hidden="true" />
+      <p>Loading…</p>
+    </div>
+  );
+}
+
+export default function App() {
+  useTheme();
+  const { path } = useRoute();
+  const page =
+    path === '/' ? (
+      <Home />
+    ) : path === '/game' ? (
+      <Game />
+    ) : path === '/result' ? (
+      <Result />
+    ) : (
+      <NotFound />
+    );
+  return (
+    <>
+      <a className="skip-link" href="#main" onClick={(e) => (e.preventDefault(), document.getElementById('main')?.focus())}>
         Skip to content
-      </button>
-      <main id="main" tabIndex={-1} className="outline-none">
-        <WouterRouter hook={useHashLocation}>
-          <Switch>
-            <Route path="/" component={Home} />
-            <Route path="/game" component={Game} />
-            <Route path="/result" component={Result} />
-            <Route component={NotFound} />
-          </Switch>
-        </WouterRouter>
+      </a>
+      <NetworkBadge />
+      <main id="main" tabIndex={-1}>
+        <Suspense fallback={<Loading />}>{page}</Suspense>
       </main>
-    </MotionConfig>
+      <UpdateToast />
+    </>
   );
 }

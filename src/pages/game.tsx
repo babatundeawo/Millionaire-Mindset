@@ -1,501 +1,340 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useLocation } from 'wouter';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Volume2, VolumeX, Sparkles, Loader2, DoorOpen } from 'lucide-react';
-import { AnswerButton } from '@/components/AnswerButton';
-import { MoneyLadder } from '@/components/MoneyLadder';
-import { LifelineButton } from '@/components/LifelineButton';
-import { PhoneFriendModal } from '@/components/PhoneFriendModal';
-import { AudienceModal } from '@/components/AudienceModal';
-import { selectRandomQuestions, getGuaranteedPrize, MONEY_LADDER, formatCurrency } from '@/data/questions';
-import type { Question } from '@/data/questions';
-import { generateQuestionsWithGroq, getAiQuestionsEnabled } from '@/lib/groq';
-import {
-  startThinkingMusic,
-  stopThinkingMusic,
-  playAnswerSelected,
-  playCorrect,
-  playWrong,
-  playLevelUp,
-  playSafeHaven,
-  playWalkAway,
-  playWin,
-  playPhoneRing,
-  playAudienceReveal,
-  setMuted,
-  getMuted,
-} from '@/hooks/useSound';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { AnswerButton, type AnswerState } from '../components/AnswerButton.tsx';
+import { AudienceModal } from '../components/AudienceModal.tsx';
+import { Icon } from '../components/Icon.tsx';
+import { LifelineButton } from '../components/LifelineButton.tsx';
+import { Modal } from '../components/Modal.tsx';
+import { MoneyLadder } from '../components/MoneyLadder.tsx';
+import { PhoneFriendModal } from '../components/PhoneFriendModal.tsx';
+import { buildDeck } from '../game/deck.ts';
+import { currentLevel, currentQuestion, initGame, reduce } from '../game/engine.ts';
+import { formatNaira, LADDER, prizeAt, walkAwayPrize } from '../game/ladder.ts';
+import { pickFiftyFifty } from '../game/lifelines.ts';
+import { LETTERS, type Letter, type Question } from '../game/types.ts';
+import * as sound from '../hooks/useSound.ts';
+import { buzz } from '../lib/haptics.ts';
+import { generateQuestions } from '../lib/groq.ts';
+import { navigate } from '../lib/router.ts';
+import { saveResult } from '../lib/session.ts';
+import { getSettings, recordResult, updateSettings, useSettings } from '../lib/settings.ts';
 
-type RevealState = 'idle' | 'selected' | 'revealing' | 'correct' | 'wrong';
-type LoadStatus = 'loading-ai' | 'ready';
+const SUSPENSE_MS = 1700;
+const AFTER_RIGHT_MS = 2000;
+const AFTER_WRONG_MS = 2400;
 
-export default function Game() {
-  const [, setLocation] = useLocation();
-  const [questions, setQuestions] = useState<Question[] | null>(null);
-  const [loadStatus, setLoadStatus] = useState<LoadStatus>('loading-ai');
-  const [usedAiQuestions, setUsedAiQuestions] = useState(false);
-  const [aiFallbackNotice, setAiFallbackNotice] = useState<string | null>(null);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [revealState, setRevealState] = useState<RevealState>('idle');
-  const [eliminatedOptions, setEliminatedOptions] = useState<string[]>([]);
-  const [usedLifelines, setUsedLifelines] = useState({
-    fiftyFifty: false,
-    phoneAFriend: false,
-    askAudience: false,
-  });
-  const [showPhoneModal, setShowPhoneModal] = useState(false);
-  const [showAudienceModal, setShowAudienceModal] = useState(false);
-  const [showWalkAwayConfirm, setShowWalkAwayConfirm] = useState(false);
-  const [muted, setMutedState] = useState(() => getMuted());
-
-  // Every reveal/redirect delay goes through `later` so leaving the page
-  // mid-reveal (e.g. browser Back) can never trigger a stray redirect.
-  const timers = useRef<number[]>([]);
-  const later = useCallback((fn: () => void, ms: number) => {
-       timers.current.push(window.setTimeout(fn, ms));
-  }, []);
-  useEffect(() => () => timers.current.forEach(window.clearTimeout), []);
+/** Loads a deck: AI questions if the player enabled them, otherwise (or on any failure) the built-in bank. */
+function useDeck() {
+  const [deck, setDeck] = useState<Question[] | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const ai = useRef(getSettings().aiEnabled && !!getSettings().aiKey);
 
   useEffect(() => {
-    if (!showWalkAwayConfirm) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setShowWalkAwayConfirm(false);
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [showWalkAwayConfirm]);
-
-  // Load the question set once on mount: try Groq if AI mode is enabled
-  // and a key is set, otherwise (or on any failure) fall back to the
-  // built-in bank so a broken key or offline connection never blocks play.
-  const hasLoadedRef = useRef(false);
-  useEffect(() => {
-    if (hasLoadedRef.current) return;
-    hasLoadedRef.current = true;
-
-    const controller = new AbortController();
-
-    async function load() {
-      if (getAiQuestionsEnabled()) {
+    const ctl = new AbortController();
+    const s = getSettings();
+    (async () => {
+      if (ai.current) {
         try {
-          const aiQuestions = await generateQuestionsWithGroq({ signal: controller.signal });
-          setQuestions(aiQuestions);
-          setUsedAiQuestions(true);
-          setLoadStatus('ready');
+          const q = await generateQuestions({ apiKey: s.aiKey, model: s.aiModel, topic: s.aiTopic, signal: ctl.signal });
+          if (!ctl.signal.aborted) setDeck(q);
           return;
-        } catch (err) {
-          if (controller.signal.aborted) return;
-          const message = err instanceof Error ? err.message : 'Unknown error generating questions.';
-          setAiFallbackNotice(`AI question generation failed (${message}) — using built-in questions instead.`);
+        } catch (e) {
+          if (ctl.signal.aborted) return;
+          setNotice(`${e instanceof Error ? e.message : 'AI questions failed.'} Using the built-in questions instead.`);
         }
       }
-      setQuestions(selectRandomQuestions());
-      setUsedAiQuestions(false);
-      setLoadStatus('ready');
-    }
-
-    load();
-    return () => controller.abort();
+      if (!ctl.signal.aborted) setDeck(buildDeck());
+    })();
+    return () => ctl.abort();
   }, []);
 
-  // Auto-dismiss the fallback notice after a few seconds so it doesn't
-  // linger over the gameplay screen.
+  return { deck, notice, usingAi: ai.current && !notice };
+}
+
+export default function Game() {
+  const { deck, notice, usingAi } = useDeck();
   useEffect(() => {
-    if (!aiFallbackNotice) return;
-    const t = setTimeout(() => setAiFallbackNotice(null), 6000);
-    return () => clearTimeout(t);
-  }, [aiFallbackNotice]);
+    document.title = 'Playing | Millionaire Mindset';
+  }, []);
 
-  const currentQuestion = questions?.[currentQuestionIndex];
-  const currentLevel = currentQuestionIndex + 1;
-  const currentPrize = MONEY_LADDER[currentQuestionIndex]?.amount ?? 0;
-
-  // Start thinking music each time a new question loads
-  useEffect(() => {
-    if (loadStatus !== 'ready') return;
-    startThinkingMusic();
-    return () => stopThinkingMusic();
-  }, [currentQuestionIndex, loadStatus]);
-
-  const toggleMute = useCallback(() => {
-    const next = !muted;
-    setMuted(next);
-    setMutedState(next);
-    if (next) stopThinkingMusic();
-    else startThinkingMusic();
-  }, [muted]);
-
-  const handleAnswerClick = useCallback(
-    (letter: string) => {
-      if (revealState !== 'idle' || !currentQuestion) return;
-
-      stopThinkingMusic();
-      playAnswerSelected();
-      setSelectedAnswer(letter);
-      setRevealState('selected');
-
-      // Suspense pause → reveal
-      later(() => {
-        setRevealState('revealing');
-
-        later(() => {
-          const isCorrect = letter === currentQuestion.correctLetter;
-          setRevealState(isCorrect ? 'correct' : 'wrong');
-
-          if (isCorrect) {
-            playCorrect();
-            later(() => {
-              if (currentQuestionIndex === 14) {
-                playWin();
-                later(() => setLocation('/result?outcome=win'), 1800);
-              } else {
-                const nextLevel = currentQuestionIndex + 1;
-                const isSafeHaven = MONEY_LADDER[nextLevel]?.isSafeHaven;
-                if (isSafeHaven) playSafeHaven();
-                else playLevelUp();
-                setCurrentQuestionIndex(nextLevel);
-                setSelectedAnswer(null);
-                setRevealState('idle');
-                setEliminatedOptions([]);
-              }
-            }, 2000);
-          } else {
-            playWrong();
-            later(() => {
-              const guaranteed = getGuaranteedPrize(currentLevel);
-              setLocation(
-                `/result?outcome=loss&prize=${guaranteed}&correct=${currentQuestion.correctLetter}`
-              );
-            }, 2200);
-          }
-        }, 1500);
-      }, 1500);
-    },
-    [revealState, currentQuestion, currentQuestionIndex, currentLevel, setLocation]
-  );
-
-  const handleFiftyFifty = useCallback(() => {
-    if (usedLifelines.fiftyFifty || revealState !== 'idle' || !currentQuestion) return;
-    setUsedLifelines(prev => ({ ...prev, fiftyFifty: true }));
-    const wrong = currentQuestion.options
-      .filter(o => o.letter !== currentQuestion.correctLetter)
-      .map(o => o.letter);
-    const keepIdx = Math.floor(Math.random() * wrong.length);
-    setEliminatedOptions(wrong.filter((_, i) => i !== keepIdx));
-  }, [usedLifelines.fiftyFifty, revealState, currentQuestion]);
-
-  const handlePhoneAFriend = useCallback(() => {
-    if (usedLifelines.phoneAFriend || revealState !== 'idle') return;
-    setUsedLifelines(prev => ({ ...prev, phoneAFriend: true }));
-    playPhoneRing();
-    setShowPhoneModal(true);
-  }, [usedLifelines.phoneAFriend, revealState]);
-
-  const handleAskAudience = useCallback(() => {
-    if (usedLifelines.askAudience || revealState !== 'idle') return;
-    setUsedLifelines(prev => ({ ...prev, askAudience: true }));
-    playAudienceReveal();
-    setShowAudienceModal(true);
-  }, [usedLifelines.askAudience, revealState]);
-
-  const handleWalkAway = useCallback(() => {
-    if (revealState !== 'idle') return;
-    setShowWalkAwayConfirm(true);
-  }, [revealState]);
-
-  const confirmWalkAway = useCallback(() => {
-    setShowWalkAwayConfirm(false);
-    stopThinkingMusic();
-    playWalkAway();
-    const guaranteed = getGuaranteedPrize(currentLevel);
-    later(() => setLocation(`/result?outcome=walkaway&prize=${guaranteed}`), 600);
-  }, [currentLevel, setLocation]);
-
-  // Keyboard shortcuts: A–D (or 1–4) pick an answer, Escape backs out of the
-  // walk-away confirmation. Ignored while a reveal animation is in flight
-  // or a modal/dialog is covering the board.
-  useEffect(() => {
-    if (revealState !== 'idle' || !currentQuestion) return;
-    if (showPhoneModal || showAudienceModal || showWalkAwayConfirm) return;
-
-    const keyToLetter: Record<string, string> = {
-      a: 'A', b: 'B', c: 'C', d: 'D',
-      '1': 'A', '2': 'B', '3': 'C', '4': 'D',
-    };
-
-    function onKeyDown(e: KeyboardEvent) {
-      const letter = keyToLetter[e.key.toLowerCase()];
-      if (!letter) return;
-      if (eliminatedOptions.includes(letter)) return;
-      if (!currentQuestion!.options.some(o => o.letter === letter)) return;
-      handleAnswerClick(letter);
-    }
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [revealState, currentQuestion, showPhoneModal, showAudienceModal, showWalkAwayConfirm, eliminatedOptions, handleAnswerClick]);
-
-  // Loading screen while the question set is being generated/selected.
-  if (loadStatus !== 'ready' || !questions || !currentQuestion) {
+  if (!deck) {
     return (
-      <div className="min-h-[100dvh] w-full flex flex-col items-center justify-center gap-4 relative overflow-hidden grain-overlay">
-        <div className="absolute inset-0 bg-background pointer-events-none">
-          <div className="absolute top-1/3 left-1/3 w-[700px] h-[700px] bg-primary/12 rounded-full blur-[140px] spotlight-pulse" />
-        </div>
-        <div className="glass-panel relative z-10 flex flex-col items-center gap-4 text-center px-10 py-8 rounded-2xl">
-          <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}>
-            {getAiQuestionsEnabled() ? (
-              <Sparkles className="w-10 h-10 text-gold-gradient" />
-            ) : (
-              <Loader2 className="w-10 h-10 text-primary" />
-            )}
-          </motion.div>
-          <p className="text-sm font-mono tracking-widest text-muted-foreground uppercase">
-            {getAiQuestionsEnabled() ? 'Generating your quiz with AI…' : 'Shuffling the question deck…'}
-          </p>
-        </div>
+      <div className="loading" role="status">
+        <div className="spinner" aria-hidden="true" />
+        <p>{ai() ? 'Writing your quiz with AI…' : 'Shuffling the questions…'}</p>
       </div>
     );
   }
+  return <Board deck={deck} notice={notice} usingAi={usingAi} />;
+}
+
+const ai = () => getSettings().aiEnabled && !!getSettings().aiKey;
+
+function Board({ deck, notice, usingAi }: { deck: Question[]; notice: string | null; usingAi: boolean }) {
+  const settings = useSettings();
+  const [s, dispatch] = useReducer(reduce, deck, initGame);
+  const [modal, setModal] = useState<null | 'phone' | 'audience' | 'walk' | 'ladder'>(null);
+  const [live, setLive] = useState('');
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const [showNotice, setShowNotice] = useState(!!notice);
+
+  const q = currentQuestion(s);
+  const level = currentLevel(s);
+  const canAct = (s.phase === 'answering' || s.phase === 'selected') && modal === null;
+  const soundOn = settings.sfx || settings.music;
+
+  // Tension music while the player is thinking.
+  const thinking = (s.phase === 'answering' || s.phase === 'selected') && modal !== 'walk';
+  useEffect(() => {
+    if (!thinking) return;
+    sound.startThinkingMusic();
+    return () => sound.stopThinkingMusic();
+  }, [thinking, s.index, settings.music]);
+
+  // Drive the reveal sequence. Every timer is cleaned up, so leaving the page can never trigger a stray redirect.
+  useEffect(() => {
+    let id: number | undefined;
+    if (s.phase === 'locked') {
+      sound.playAnswerSelected();
+      buzz(25);
+      setLive(`Final answer ${s.selected}. Locked in.`);
+      id = window.setTimeout(() => dispatch({ type: 'reveal' }), SUSPENSE_MS);
+    } else if (s.phase === 'revealed') {
+      const right = s.verdict === 'correct';
+      if (right) {
+        sound.playCorrect();
+        buzz([30, 40, 30]);
+        setLive('Correct!');
+      } else {
+        sound.playWrong();
+        buzz(220);
+        const c = q.options.find((o) => o.letter === q.correct)!;
+        setLive(`Incorrect. The correct answer was ${c.letter}: ${c.text}.`);
+      }
+      id = window.setTimeout(() => {
+        if (right) (s.index === 14 ? sound.playWin : LADDER[s.index + 1]?.haven ? sound.playSafeHaven : sound.playLevelUp)();
+        dispatch({ type: 'advance' });
+      }, right ? AFTER_RIGHT_MS : AFTER_WRONG_MS);
+    } else if (s.phase === 'finished' && s.result) {
+      const result = s.result;
+      saveResult(result);
+      recordResult(result);
+      if (result.outcome === 'win') sound.playWin();
+      if (result.outcome === 'walkaway') sound.playWalkAway();
+      id = window.setTimeout(() => navigate('/result', true), result.outcome === 'win' ? 1800 : 450);
+    }
+    return () => window.clearTimeout(id);
+  }, [s.phase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Announce and focus each new question.
+  useEffect(() => {
+    if (s.phase !== 'answering' || s.selected) return;
+    setLive(`Question ${level} of 15, for ${formatNaira(prizeAt(level))}.`);
+    titleRef.current?.focus({ preventScroll: true });
+  }, [s.index]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pick = useCallback(
+    (letter: Letter) => {
+      if (!canAct || s.eliminated.includes(letter)) return;
+      if (settings.confirm && s.selected === letter) {
+        dispatch({ type: 'lock' });
+        return;
+      }
+      dispatch({ type: 'select', letter, confirm: settings.confirm });
+      if (settings.confirm) setLive(`Selected ${letter}. Press Final answer to lock it in.`);
+      buzz(10);
+    },
+    [canAct, s.eliminated, s.selected, settings.confirm],
+  );
+
+  // Keyboard: A-D or 1-4 pick (again to lock), Enter locks.
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || !canAct) return;
+      const map: Record<string, Letter> = { a: 'A', b: 'B', c: 'C', d: 'D', '1': 'A', '2': 'B', '3': 'C', '4': 'D' };
+      const l = map[e.key.toLowerCase()];
+      if (l) pick(l);
+      else if (e.key === 'Enter' && s.phase === 'selected' && document.activeElement?.tagName !== 'BUTTON') dispatch({ type: 'lock' });
+    };
+    window.addEventListener('keydown', on);
+    return () => window.removeEventListener('keydown', on);
+  }, [canAct, pick, s.phase]);
+
+  const stateOf = (letter: Letter): AnswerState => {
+    if (s.eliminated.includes(letter)) return 'gone';
+    if (s.phase === 'revealed') {
+      if (letter === q.correct) return 'correct';
+      if (letter === s.selected) return 'wrong';
+      return 'dim';
+    }
+    if (letter === s.selected) return s.phase === 'locked' ? 'locked' : 'selected';
+    return s.phase === 'locked' ? 'dim' : 'idle';
+  };
+
+  const status =
+    s.phase === 'revealed'
+      ? s.verdict === 'correct'
+        ? { text: 'Correct!', tone: 'ok' }
+        : { text: 'Not quite.', tone: 'bad' }
+      : s.phase === 'locked'
+        ? { text: 'Locked in. Is it right?', tone: '' }
+        : s.phase === 'selected'
+          ? { text: `Selected ${s.selected}.`, tone: '' }
+          : { text: settings.confirm ? 'Tap an answer, then lock it in.' : 'Tap an answer to lock it in.', tone: '' };
+
+  const toggleSound = () => {
+    const on = !soundOn;
+    updateSettings({ sfx: on, music: on });
+    if (!on) sound.stopThinkingMusic();
+  };
+
+  const fifty = () => {
+    dispatch({ type: 'fifty', eliminated: pickFiftyFifty(q) });
+    setLive('50:50 used. Two wrong answers removed.');
+  };
 
   return (
-    <div className="min-h-[100dvh] w-full overflow-x-hidden relative flex flex-col grain-overlay">
-      {/* Spotlight background */}
-      <div className="absolute inset-0 bg-background pointer-events-none">
-        <div className="absolute top-1/3 left-1/3 w-[700px] h-[700px] bg-primary/12 rounded-full blur-[140px] spotlight-pulse" />
-      </div>
-
-      {/* ── TOP BAR ─────────────────────────────────────────────────────────── */}
-      {/* Mobile: two compact groups, always one row (lifelines are icon-only below sm).
-          sm+: original three-group layout with the counter centered absolutely. */}
-      <div className="relative z-10 flex-shrink-0 flex items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-4 py-1.5 sm:py-2 border-b border-border/40 bg-card/30 backdrop-blur-md">
-        {/* Lifelines */}
-        <div className="flex items-center gap-1.5 sm:gap-3 order-1">
-          <LifelineButton
-            type="50-50"
-            used={usedLifelines.fiftyFifty}
-            onClick={handleFiftyFifty}
-            disabled={revealState !== 'idle'}
-          />
-          <LifelineButton
-            type="phone"
-            used={usedLifelines.phoneAFriend}
-            onClick={handlePhoneAFriend}
-            disabled={revealState !== 'idle'}
-          />
-          <LifelineButton
-            type="audience"
-            used={usedLifelines.askAudience}
-            onClick={handleAskAudience}
-            disabled={revealState !== 'idle'}
-          />
+    <div className="game">
+      <header className="game__bar">
+        <div className="container game__bar-inner">
+          <div className="game__group">
+            <LifelineButton kind="fifty" used={s.used.fifty} disabled={!canAct} onClick={fifty} />
+            <LifelineButton
+              kind="phone"
+              used={s.used.phone}
+              disabled={!canAct}
+              onClick={() => {
+                dispatch({ type: 'phone' });
+                sound.playPhoneRing();
+                setModal('phone');
+              }}
+            />
+            <LifelineButton
+              kind="audience"
+              used={s.used.audience}
+              disabled={!canAct}
+              onClick={() => {
+                dispatch({ type: 'audience' });
+                sound.playAudienceReveal();
+                setModal('audience');
+              }}
+            />
+          </div>
+          <p className="counter">
+            Question {level} / 15
+            {usingAi && (
+              <>
+                {' '}
+                <span className="chip">
+                  <Icon name="sparkles" size={14} /> AI
+                </span>
+              </>
+            )}
+          </p>
+          <div className="game__group">
+            <button type="button" className="btn btn--quiet lg-hide" onClick={() => setModal('ladder')} aria-label="Show prize ladder">
+              <Icon name="ladder" />
+            </button>
+            <button type="button" className="btn btn--quiet" onClick={toggleSound} aria-label={soundOn ? 'Mute sound' : 'Turn sound on'} aria-pressed={!soundOn}>
+              <Icon name={soundOn ? 'volume' : 'mute'} />
+            </button>
+            <button type="button" className="btn btn--ghost" disabled={!canAct} onClick={() => setModal('walk')} aria-label="Walk away">
+              <Icon name="exit" size={20} />
+              <span className="hide-sm">Walk away</span>
+            </button>
+          </div>
         </div>
+        <div className="rail" aria-hidden="true">
+          {LADDER.map((r) => (
+            <i key={r.level} className={`${r.level < level ? 'is-done' : r.level === level ? 'is-now' : ''}${r.haven ? ' is-haven' : ''}`} />
+          ))}
+        </div>
+        <p className="sr-only">
+          Question {level} of 15
+        </p>
+      </header>
 
-        {/* Center: question counter — sm+ only in the top bar; on mobile it
-            moves down next to "FOR ₦X" so the top bar never has to wrap. */}
-        <div className="hidden sm:block sm:order-2 sm:absolute sm:left-1/2 sm:-translate-x-1/2">
-          <p className="text-xs text-muted-foreground font-mono tracking-widest inline-flex items-center gap-1.5">
-            QUESTION {currentLevel} / 15
-            {usedAiQuestions && (
-              <span
-                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary/15 text-primary text-[10px] font-bold"
-                title="This question set was generated by AI (Groq)"
-              >
-                <Sparkles className="w-2.5 h-2.5" /> AI
+      <div className="game__main">
+        <section className="board" aria-label="Question" key={s.index}>
+          {showNotice && notice && (
+            <div className="notice" role="status">
+              <span style={{ flex: 1 }}>{notice}</span>
+              <button type="button" className="btn btn--quiet" style={{ minHeight: 24 }} onClick={() => setShowNotice(false)} aria-label="Dismiss message">
+                <Icon name="x" size={16} />
+              </button>
+            </div>
+          )}
+          <p className="playing-for">
+            <span>Question {level} of 15 · Playing for</span>
+            <b>{formatNaira(prizeAt(level))}</b>
+            {LADDER[level - 1].haven && (
+              <span className="chip">
+                <Icon name="gem" size={14} /> Safe haven
               </span>
             )}
           </p>
-        </div>
-
-        {/* Right: walk away + mute */}
-        <div className="flex items-center gap-1.5 sm:gap-2 order-2 sm:order-3">
-          <button
-            onClick={handleWalkAway}
-            disabled={revealState !== 'idle'}
-            className="group relative overflow-hidden px-2.5 sm:px-4 py-1.5 border border-accent/50 text-accent text-[11px] sm:text-xs font-bold rounded-lg hover:bg-accent/10 hover:border-accent transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-          >
-            WALK AWAY
-          </button>
-          <button
-            onClick={toggleMute}
-            className="p-1.5 rounded-lg border border-border/40 text-muted-foreground hover:text-foreground hover:border-border transition-all flex-shrink-0"
-            title={muted ? 'Unmute' : 'Mute'}
-            aria-label={muted ? 'Unmute sound' : 'Mute sound'}
-          >
-            {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </button>
-        </div>
+          <div className="qcard">
+            <h1 ref={titleRef} tabIndex={-1}>
+              {q.text}
+            </h1>
+          </div>
+          <div className="answers" role="group" aria-label="Answers">
+            {q.options.map((o) => (
+              <AnswerButton key={o.letter} letter={o.letter} text={o.text} state={stateOf(o.letter)} disabled={!canAct || s.eliminated.includes(o.letter)} onClick={() => pick(o.letter)} />
+            ))}
+          </div>
+          <div className="lockbar">
+            {settings.confirm && (
+              <button type="button" className="btn btn--gold btn--xl" disabled={s.phase !== 'selected'} onClick={() => dispatch({ type: 'lock' })}>
+                <Icon name="lock" size={20} /> {s.phase === 'selected' ? `Final answer: ${s.selected}` : 'Final answer'}
+              </button>
+            )}
+            <p className="lockbar__status" data-tone={status.tone}>
+              {status.text}{(s.phase === 'answering' || s.phase === 'selected') && <span className="kbd-hint"> Keys A–D also work.</span>}
+            </p>
+          </div>
+        </section>
+        <aside className="ladder-side" aria-label="Prize ladder">
+          <MoneyLadder level={level} />
+        </aside>
       </div>
 
-      {/* Progress bar — fills across the 15 questions, echoes the ladder */}
-      <div className="relative z-10 flex-shrink-0 h-[3px] bg-border/20">
-        <motion.div
-          className="h-full bg-gradient-to-r from-primary via-accent to-primary"
-          initial={false}
-          animate={{ width: `${(currentLevel / 15) * 100}%` }}
-          transition={{ duration: 0.6, ease: 'easeOut' }}
-        />
+      <div className="sr-only" role="status" aria-live="polite">
+        {live}
       </div>
 
-      {/* Notice when AI generation failed and we fell back to the built-in bank */}
-      <AnimatePresence>
-        {aiFallbackNotice && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="relative z-20 mx-3 mt-2 px-3 py-2 rounded-lg border border-accent/40 bg-accent/10 backdrop-blur-sm text-accent text-xs font-mono"
-          >
-            {aiFallbackNotice}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── MAIN AREA ────────────────────────────────────────────────────────── */}
-      {/* Mobile/tablet: single column, ladder below answers. Desktop (lg+): two columns side by side. */}
-      <div className="relative z-10 flex-1 flex flex-col lg:grid lg:grid-cols-[1fr_240px] gap-2 sm:gap-3 p-2.5 sm:p-3 lg:overflow-hidden">
-
-        {/* LEFT: Question + Answers */}
-        <div className="flex flex-col justify-center gap-2 sm:gap-3 lg:overflow-hidden min-w-0 order-1">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentQuestionIndex}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
-              transition={{ duration: 0.4 }}
-              className="flex flex-col gap-3"
-            >
-              {/* Question counter — mobile only (sm+ shows it in the top bar instead) */}
-              <p className="sm:hidden text-center text-[11px] text-muted-foreground font-mono tracking-widest inline-flex items-center justify-center gap-1.5">
-                QUESTION {currentLevel} / 15
-                {usedAiQuestions && (
-                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary/15 text-primary text-[9px] font-bold">
-                    <Sparkles className="w-2.5 h-2.5" /> AI
-                  </span>
-                )}
-              </p>
-
-              {/* Playing for */}
-              <div className="text-center">
-                <motion.p
-                  key={currentPrize}
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="text-lg sm:text-xl font-extrabold font-mono tracking-wide"
-                >
-                  <span className="text-muted-foreground">FOR </span>
-                  <span className="text-gold-gradient">{formatCurrency(currentPrize)}</span>
-                </motion.p>
-              </div>
-
-              {/* Question box */}
-              <div className="glass-panel gold-ring rounded-xl px-4 sm:px-6 py-4 sm:py-5 shadow-lg shadow-primary/10">
-                <h2 className="text-base sm:text-xl font-bold text-foreground leading-snug text-center font-[family-name:var(--font-display)]">
-                  {currentQuestion.question}
-                </h2>
-              </div>
-
-              {/* Keyboard hint — desktop only, unobtrusive */}
-              <p className="hidden sm:block text-center text-[10px] text-muted-foreground/80 font-mono tracking-widest -mt-1">
-                PRESS A–D TO ANSWER
-              </p>
-
-              {/* Answer grid: 1 column on small phones, 2 columns from sm breakpoint up */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
-                {currentQuestion.options.map(option => (
-                  <AnswerButton
-                    key={option.letter}
-                    letter={option.letter}
-                    text={option.text}
-                    selected={selectedAnswer === option.letter}
-                    isCorrect={
-                      (revealState === 'correct' || revealState === 'revealing') &&
-                      option.letter === currentQuestion.correctLetter
-                        ? true
-                        : null
-                    }
-                    isWrong={revealState === 'wrong' && selectedAnswer === option.letter}
-                    isEliminated={eliminatedOptions.includes(option.letter)}
-                    disabled={
-                      revealState !== 'idle' || eliminatedOptions.includes(option.letter)
-                    }
-                    onClick={() => handleAnswerClick(option.letter)}
-                  />
-                ))}
-              </div>
-            </motion.div>
-          </AnimatePresence>
-        </div>
-
-        {/* Money Ladder — compact scrollable strip on mobile, sidebar on desktop */}
-        <div className="order-2 lg:order-2 h-28 sm:h-48 lg:h-auto lg:overflow-hidden flex-shrink-0">
-          <MoneyLadder currentLevel={currentLevel} />
-        </div>
-      </div>
-
-      {/* Modals */}
-      <PhoneFriendModal
-        isOpen={showPhoneModal}
-        onClose={() => setShowPhoneModal(false)}
-        correctAnswer={currentQuestion.correctLetter}
-        allAnswers={currentQuestion.options}
-      />
-      <AudienceModal
-        isOpen={showAudienceModal}
-        onClose={() => setShowAudienceModal(false)}
-        correctAnswer={currentQuestion.correctLetter}
-        allAnswers={currentQuestion.options}
-      />
-
-      {/* Walk-away confirmation — a single mis-click shouldn't end the game */}
-      <AnimatePresence>
-        {showWalkAwayConfirm && (
+      <PhoneFriendModal open={modal === 'phone'} onClose={() => setModal(null)} question={q} level={level} eliminated={s.eliminated} />
+      <AudienceModal open={modal === 'audience'} onClose={() => setModal(null)} question={q} level={level} eliminated={s.eliminated} />
+      <Modal open={modal === 'ladder'} onClose={() => setModal(null)} title="Prize ladder" titleId="ladder-title">
+        <MoneyLadder level={level} />
+      </Modal>
+      <Modal
+        open={modal === 'walk'}
+        onClose={() => setModal(null)}
+        title={<><Icon name="exit" /> Walk away?</>}
+        titleId="walk-title"
+        center
+        footer={
           <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-background/90 backdrop-blur-sm z-50"
-              onClick={() => setShowWalkAwayConfirm(false)}
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.92, y: 16 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: 16 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 32 }}
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm z-50"
+            <button type="button" className="btn btn--ghost" onClick={() => setModal(null)} data-autofocus>
+              Keep playing
+            </button>
+            <button
+              type="button"
+              className="btn btn--gold"
+              onClick={() => {
+                setModal(null);
+                dispatch({ type: 'walkaway' });
+              }}
             >
-              <div role="dialog" aria-modal="true" aria-label="Walk away?" className="glass-panel gold-ring rounded-2xl p-6 sm:p-7 text-center shadow-2xl">
-                <DoorOpen className="w-10 h-10 mx-auto text-accent mb-3" />
-                <h3 className="text-lg font-bold text-foreground mb-1.5">Walk away now?</h3>
-                <p className="text-sm text-muted-foreground mb-6">
-                  You'll take home{' '}
-                  <span className="text-gold-gradient font-bold font-mono">
-                    {formatCurrency(getGuaranteedPrize(currentLevel))}
-                  </span>{' '}
-                  and end the game.
-                </p>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setShowWalkAwayConfirm(false)}
-                    className="flex-1 px-4 py-2.5 rounded-lg border border-border/60 text-foreground text-sm font-bold hover:bg-card transition-colors"
-                  >
-                    Keep Playing
-                  </button>
-                  <button
-                    onClick={confirmWalkAway}
-                    className="flex-1 px-4 py-2.5 rounded-lg bg-accent text-accent-foreground text-sm font-bold hover:bg-accent/90 transition-colors"
-                    data-testid="confirm-walk-away"
-                    autoFocus
-                  >
-                    Walk Away
-                  </button>
-                </div>
-              </div>
-            </motion.div>
+              Walk away
+            </button>
           </>
-        )}
-      </AnimatePresence>
+        }
+      >
+        <p>
+          You will take home <strong>{formatNaira(walkAwayPrize(level))}</strong> and the game ends.
+        </p>
+      </Modal>
     </div>
   );
 }
