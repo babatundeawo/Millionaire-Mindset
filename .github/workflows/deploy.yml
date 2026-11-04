@@ -33,7 +33,7 @@ jobs:
       - name: Colour contrast check
         run: npm run contrast
       - id: pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
       - name: Build
         run: npm run build
         env:
