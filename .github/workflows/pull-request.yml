@@ -30,7 +30,7 @@ jobs:
       - run: npm run build
       - run: npm run check
       - name: Keep the built site so you can download and inspect it
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: site-preview
           path: dist
